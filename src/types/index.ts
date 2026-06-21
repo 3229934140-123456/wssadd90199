@@ -146,7 +146,7 @@ export interface DashboardStats {
 
 export interface OperationLog {
   id: string;
-  type: 'recharge' | 'consume' | 'refund' | 'refund_apply' | 'freeze' | 'unfreeze' | 'approve' | 'reject';
+  type: 'recharge' | 'recharge_apply' | 'consume' | 'refund' | 'refund_apply' | 'freeze' | 'unfreeze' | 'approve' | 'reject';
   targetId: string;
   targetName: string;
   detail: string;

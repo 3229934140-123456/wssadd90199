@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Search,
   Filter,
@@ -13,6 +13,8 @@ import {
   X,
   ArrowRightLeft,
   CreditCard,
+  Download,
+  Eye,
 } from 'lucide-react';
 import Card from '@/components/Card';
 import DataTable from '@/components/DataTable';
@@ -41,7 +43,31 @@ export default function Consume() {
   const [memberSearch, setMemberSearch] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const filteredRecords = getFilteredRecords();
+  const [historyMemberSearch, setHistoryMemberSearch] = useState('');
+  const [historyStoreFilter, setHistoryStoreFilter] = useState('all');
+  const [historyCrossStoreFilter, setHistoryCrossStoreFilter] = useState<'all' | 'cross' | 'local'>('all');
+  const [historyProjectSearch, setHistoryProjectSearch] = useState('');
+
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedDetailRecord, setSelectedDetailRecord] = useState<ConsumeRecord | null>(null);
+
+  const baseFilteredRecords = getFilteredRecords();
+
+  const filteredRecords = useMemo(() => {
+    return baseFilteredRecords.filter((r) => {
+      const matchMember = historyMemberSearch === '' || r.memberName.includes(historyMemberSearch);
+      const matchStore = historyStoreFilter === 'all' || r.storeId === historyStoreFilter;
+      const matchCrossStore =
+        historyCrossStoreFilter === 'all' ||
+        (historyCrossStoreFilter === 'cross' && r.isCrossStore) ||
+        (historyCrossStoreFilter === 'local' && !r.isCrossStore);
+      const matchProject =
+        historyProjectSearch === '' ||
+        r.projectName.includes(historyProjectSearch) ||
+        r.projectItems.some((item) => item.name.includes(historyProjectSearch));
+      return matchMember && matchStore && matchCrossStore && matchProject;
+    });
+  }, [baseFilteredRecords, historyMemberSearch, historyStoreFilter, historyCrossStoreFilter, historyProjectSearch]);
 
   const totalAmount = selectedProjects.reduce((sum, p) => sum + p.price, 0);
 
@@ -124,6 +150,70 @@ export default function Consume() {
 
   const projectCategories = [...new Set(projects.map((p) => p.category))];
 
+  const handleViewDetail = (record: ConsumeRecord) => {
+    setSelectedDetailRecord(record);
+    setShowDetailModal(true);
+  };
+
+  const handleExportCSV = () => {
+    const headers = [
+      '时间',
+      '会员',
+      '核销门店',
+      '原充值门店',
+      '是否跨店',
+      '业绩分成',
+      '项目名',
+      '项目原价',
+      '扣本金',
+      '扣赠金',
+      '操作员',
+    ];
+
+    const rows: string[][] = [];
+    filteredRecords.forEach((record) => {
+      record.projectItems.forEach((item) => {
+        rows.push([
+          formatDateTime(record.createdAt),
+          record.memberName,
+          record.storeName,
+          record.originalStoreName,
+          record.isCrossStore ? '跨店' : '本店',
+          `${(record.performanceRatio * 100).toFixed(0)}%`,
+          item.name,
+          item.price.toLocaleString(),
+          item.principal.toLocaleString(),
+          item.gift.toLocaleString(),
+          record.operator,
+        ]);
+      });
+    });
+
+    const csvContent = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((cell) => {
+            const escaped = cell.replace(/"/g, '""');
+            return `"${escaped}"`;
+          })
+          .join(',')
+      )
+      .join('\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `核销明细_${date}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const historyColumns = [
     {
       key: 'member',
@@ -194,7 +284,28 @@ export default function Consume() {
         <span className="text-sm text-slate-500">{formatDateTime(record.createdAt)}</span>
       ),
     },
+    {
+      key: 'action',
+      title: '操作',
+      width: '80px',
+      render: (record: ConsumeRecord) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleViewDetail(record);
+          }}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          查看
+        </button>
+      ),
+    },
   ];
+
+  const detailMember = selectedDetailRecord
+    ? members.find((m) => m.id === selectedDetailRecord.memberId)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -533,24 +644,35 @@ export default function Consume() {
       ) : (
         <Card padding="none">
           <div className="p-4 border-b border-slate-100">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="搜索会员、项目..."
-                    value={searchKeyword}
-                    onChange={(e) => setSearchKeyword(e.target.value)}
-                    className="w-56 h-9 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="搜索会员姓名..."
+                    value={historyMemberSearch}
+                    onChange={(e) => setHistoryMemberSearch(e.target.value)}
+                    className="w-48 h-9 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="搜索项目名..."
+                    value={historyProjectSearch}
+                    onChange={(e) => setHistoryProjectSearch(e.target.value)}
+                    className="w-48 h-9 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 <div className="flex items-center gap-2">
                   <Filter className="w-4 h-4 text-slate-400" />
                   <select
-                    value={filterStore}
-                    onChange={(e) => setFilterStore(e.target.value)}
+                    value={historyStoreFilter}
+                    onChange={(e) => setHistoryStoreFilter(e.target.value)}
                     className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="all">全部门店</option>
@@ -561,7 +683,51 @@ export default function Consume() {
                     ))}
                   </select>
                 </div>
+
+                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setHistoryCrossStoreFilter('all')}
+                    className={clsx(
+                      'px-3 py-1.5 text-xs rounded-md transition-colors',
+                      historyCrossStoreFilter === 'all'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-800'
+                    )}
+                  >
+                    全部
+                  </button>
+                  <button
+                    onClick={() => setHistoryCrossStoreFilter('cross')}
+                    className={clsx(
+                      'px-3 py-1.5 text-xs rounded-md transition-colors',
+                      historyCrossStoreFilter === 'cross'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-800'
+                    )}
+                  >
+                    跨店
+                  </button>
+                  <button
+                    onClick={() => setHistoryCrossStoreFilter('local')}
+                    className={clsx(
+                      'px-3 py-1.5 text-xs rounded-md transition-colors',
+                      historyCrossStoreFilter === 'local'
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-800'
+                    )}
+                  >
+                    本店
+                  </button>
+                </div>
               </div>
+
+              <button
+                onClick={handleExportCSV}
+                className="inline-flex items-center gap-1.5 px-4 py-2 h-9 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                导出核销明细
+              </button>
             </div>
           </div>
 
@@ -569,6 +735,7 @@ export default function Consume() {
             columns={historyColumns}
             data={filteredRecords}
             rowKey="id"
+            onRowClick={handleViewDetail}
             pagination={{
               current: currentPage,
               pageSize: pageSize,
@@ -673,6 +840,136 @@ export default function Consume() {
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetailModal && selectedDetailRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowDetailModal(false)}
+          ></div>
+          <div className="relative w-[680px] bg-white rounded-2xl shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800">核销详情</h3>
+              <button
+                onClick={() => setShowDetailModal(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">会员姓名</p>
+                  <p className="text-sm font-medium text-slate-800">{selectedDetailRecord.memberName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">手机号</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {detailMember ? formatPhone(detailMember.phone) : '-'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">核销门店</p>
+                  <p className="text-sm font-medium text-slate-800">{selectedDetailRecord.storeName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">原充值门店</p>
+                  <p className="text-sm font-medium text-slate-800">{selectedDetailRecord.originalStoreName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">是否跨店</p>
+                  <p className="text-sm font-medium">
+                    {selectedDetailRecord.isCrossStore ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">
+                        <ArrowRightLeft className="w-3 h-3" />
+                        跨店
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">本店</span>
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">业绩分成比例</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {(selectedDetailRecord.performanceRatio * 100).toFixed(0)}%
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">操作人</p>
+                  <p className="text-sm font-medium text-slate-800">{selectedDetailRecord.operator}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-500">核销时间</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {formatDateTime(selectedDetailRecord.createdAt)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <p className="text-xs text-slate-500 mb-1">总金额</p>
+                  <AmountDisplay amount={selectedDetailRecord.amount} size="md" className="font-semibold" />
+                </div>
+                <div className="p-4 bg-emerald-50 rounded-xl">
+                  <p className="text-xs text-emerald-600 mb-1">扣本金</p>
+                  <AmountDisplay amount={selectedDetailRecord.principalDeduction} color="green" size="md" className="font-semibold" />
+                </div>
+                <div className="p-4 bg-orange-50 rounded-xl">
+                  <p className="text-xs text-orange-600 mb-1">扣赠金</p>
+                  <AmountDisplay amount={selectedDetailRecord.giftDeduction} color="orange" size="md" className="font-semibold" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-slate-800">项目明细</h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">项目名</th>
+                        <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">原价</th>
+                        <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">扣本金</th>
+                        <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">扣赠金</th>
+                        <th className="px-4 py-2.5 text-center text-xs font-medium text-slate-500">可用赠金</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedDetailRecord.projectItems.map((item, index) => (
+                        <tr key={index}>
+                          <td className="px-4 py-3 text-sm text-slate-800">{item.name}</td>
+                          <td className="px-4 py-3 text-sm text-slate-800 text-right">
+                            ¥{item.price.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-emerald-600 text-right">
+                            ¥{item.principal.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-orange-500 text-right">
+                            ¥{item.gift.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center">
+                            {item.canUseGift ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700">
+                                是
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">
+                                否
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -141,12 +141,21 @@ export default function Refund() {
         );
         updateMemberBalance(member.id, -calc.principalDeduction, -calc.giftDeduction);
         addLog({
+          type: 'approve',
+          targetId: selectedRecord.id,
+          targetName: member.name,
+          detail: `退款审批通过，申请 ¥${selectedRecord.requestAmount.toLocaleString()}，实际退 ¥${calc.principalDeduction.toLocaleString()}`,
+          operator: '财务管理员',
+          storeName: member.storeName,
+        });
+        addLog({
           type: 'refund',
           targetId: member.id,
           targetName: member.name,
-          detail: `退款审批通过，退本金 ¥${calc.principalDeduction.toLocaleString()}，扣赠金 ¥${calc.giftDeduction.toLocaleString()}`,
+          detail: `退款扣减，退本金 ¥${calc.principalDeduction.toLocaleString()}，扣赠金 ¥${calc.giftDeduction.toLocaleString()}`,
           operator: '财务管理员',
           storeName: member.storeName,
+          amount: calc.principalDeduction,
         });
       }
     } else {

@@ -113,6 +113,15 @@ export default function Recharge() {
           operator: '财务管理员',
           storeName: approvedRecord.storeName,
         });
+        addLog({
+          type: 'recharge',
+          targetId: approvedRecord.id,
+          targetName: approvedRecord.memberName,
+          detail: `充值入账 ¥${approvedRecord.amount.toLocaleString()}，赠送 ¥${approvedRecord.giftAmount.toLocaleString()}`,
+          operator: '财务管理员',
+          storeName: approvedRecord.storeName,
+          amount: approvedRecord.amount,
+        });
       }
     } else {
       rejectRecord(selectedRecord.id, '财务管理员', approveOpinion);
@@ -149,6 +158,15 @@ export default function Recharge() {
           detail: `充值批量审批通过，金额 ¥${r.amount.toLocaleString()}，赠送 ¥${r.giftAmount.toLocaleString()}`,
           operator: '财务管理员',
           storeName: r.storeName,
+        });
+        addLog({
+          type: 'recharge',
+          targetId: r.id,
+          targetName: r.memberName,
+          detail: `充值入账 ¥${r.amount.toLocaleString()}，赠送 ¥${r.giftAmount.toLocaleString()}`,
+          operator: '财务管理员',
+          storeName: r.storeName,
+          amount: r.amount,
         });
       });
     } else {
@@ -239,20 +257,28 @@ export default function Recharge() {
 
     if (status === 'approved') {
       updateMemberBalance(newRecharge.memberId, newRecharge.amount, giftAmount);
+      addLog({
+        type: 'recharge',
+        targetId: newRecord.id,
+        targetName: member?.name || '',
+        detail: `充值入账 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，自动审批通过`,
+        operator: '系统自动',
+        storeName: store?.name || '',
+        amount: newRecharge.amount,
+      });
+    } else {
+      addLog({
+        type: 'recharge_apply',
+        targetId: newRecord.id,
+        targetName: member?.name || '',
+        detail: status === 'pending_store'
+          ? `充值申请 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，待店长审批`
+          : `充值申请 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，待财务终审`,
+        operator: '前台操作员',
+        storeName: store?.name || '',
+        amount: newRecharge.amount,
+      });
     }
-
-    addLog({
-      type: 'recharge',
-      targetId: newRecord.id,
-      targetName: member?.name || '',
-      detail: status === 'approved'
-        ? `充值 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，自动通过`
-        : status === 'pending_store'
-        ? `充值 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，待店长审批`
-        : `充值 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，待财务终审`,
-      operator: status === 'approved' ? '系统自动' : '前台操作员',
-      storeName: store?.name || '',
-    });
 
     setShowAddModal(false);
     setNewRecharge({

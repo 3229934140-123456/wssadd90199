@@ -7,6 +7,7 @@ import Consume from "@/pages/Consume";
 import Refund from "@/pages/Refund";
 import Settings from "@/pages/Settings";
 import AuditLog from "@/pages/AuditLog";
+import StoreSettlement from "@/pages/StoreSettlement";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/consume" element={<Consume />} />
           <Route path="/refund" element={<Refund />} />
           <Route path="/audit-log" element={<AuditLog />} />
+          <Route path="/settlement" element={<StoreSettlement />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

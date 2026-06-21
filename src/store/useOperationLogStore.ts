@@ -65,10 +65,6 @@ export const useOperationLogStore = create<OperationLogState & OperationLogActio
       if (filterType !== 'all') {
         if (filterType === 'freeze') {
           matchType = l.type === 'freeze' || l.type === 'unfreeze';
-        } else if (filterType === 'refund') {
-          matchType = l.type === 'refund' || l.type === 'refund_apply';
-        } else if (filterType === 'recharge') {
-          matchType = l.type === 'recharge';
         } else {
           matchType = l.type === filterType;
         }

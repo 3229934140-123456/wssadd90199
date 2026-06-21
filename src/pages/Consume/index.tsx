@@ -121,7 +121,11 @@ export default function Consume() {
       performanceRatio: isCrossStore ? 0.7 : 1,
       isCrossStore: !!isCrossStore,
       operator: '前台操作员',
-      projectItems: deduction.items,
+      projectItems: deduction.items.map((item) => ({
+        ...item,
+        storeShare: isCrossStore ? Math.round(item.price * 0.7) : item.price,
+        originalShare: isCrossStore ? Math.round(item.price * 0.3) : 0,
+      })),
     });
 
     updateMemberBalance(selectedMember.id, -deduction.principal, -deduction.gift);
@@ -167,12 +171,16 @@ export default function Consume() {
       '项目原价',
       '扣本金',
       '扣赠金',
+      '核销门店分成',
+      '原门店分成',
       '操作员',
     ];
 
     const rows: string[][] = [];
     filteredRecords.forEach((record) => {
       record.projectItems.forEach((item) => {
+        const storeShare = item.storeShare ?? (record.isCrossStore ? Math.round(item.price * record.performanceRatio) : item.price);
+        const originalShare = item.originalShare ?? (record.isCrossStore ? Math.round(item.price * (1 - record.performanceRatio)) : 0);
         rows.push([
           formatDateTime(record.createdAt),
           record.memberName,
@@ -184,6 +192,8 @@ export default function Consume() {
           item.price.toLocaleString(),
           item.principal.toLocaleString(),
           item.gift.toLocaleString(),
+          storeShare.toLocaleString(),
+          originalShare.toLocaleString(),
           record.operator,
         ]);
       });
@@ -938,6 +948,12 @@ export default function Consume() {
                         <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">扣本金</th>
                         <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">扣赠金</th>
                         <th className="px-4 py-2.5 text-center text-xs font-medium text-slate-500">可用赠金</th>
+                        {selectedDetailRecord.isCrossStore && (
+                          <>
+                            <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">核销门店分成</th>
+                            <th className="px-4 py-2.5 text-right text-xs font-medium text-slate-500">原门店分成</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -964,6 +980,16 @@ export default function Consume() {
                               </span>
                             )}
                           </td>
+                          {selectedDetailRecord.isCrossStore && (
+                            <>
+                              <td className="px-4 py-3 text-sm text-blue-600 text-right font-medium">
+                                ¥{(item.storeShare ?? Math.round(item.price * selectedDetailRecord.performanceRatio)).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-amber-600 text-right font-medium">
+                                ¥{(item.originalShare ?? Math.round(item.price * (1 - selectedDetailRecord.performanceRatio))).toLocaleString()}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>

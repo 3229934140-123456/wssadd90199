@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Search,
   Filter,
@@ -18,10 +18,13 @@ import {
   AlertCircle,
   Plus,
   ArrowRightLeft,
+  X,
 } from 'lucide-react';
 import Card from '@/components/Card';
 import DataTable from '@/components/DataTable';
 import { useOperationLogStore } from '@/store/useOperationLogStore';
+import { useMemberStore } from '@/store/useMemberStore';
+import { useConsumeStore } from '@/store/useConsumeStore';
 import { formatDateTime } from '@/utils/format';
 import { clsx } from 'clsx';
 import type { OperationLog } from '@/types';
@@ -59,6 +62,19 @@ const extractAmount = (log: OperationLog): number => {
   return 0;
 };
 
+const parseGiftAmount = (detail: string): number => {
+  const match = detail.match(/赠送[¥￥]([\d,]+)/);
+  if (match) return parseInt(match[1].replace(/,/g, ''), 10);
+  return 0;
+};
+
+interface TimelineEntry extends OperationLog {
+  beforePrincipal: number;
+  beforeGift: number;
+  afterPrincipal: number;
+  afterGift: number;
+}
+
 export default function AuditLog() {
   const {
     filterType,
@@ -72,6 +88,11 @@ export default function AuditLog() {
   } = useOperationLogStore();
 
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [selectedMemberName, setSelectedMemberName] = useState<string | null>(null);
+
+  const { members } = useMemberStore();
+  const { records: consumeRecords } = useConsumeStore();
+  const { logs: allLogs } = useOperationLogStore();
 
   const filteredLogs = useMemo(() => {
     return getFilteredLogs().filter((l) => {
@@ -184,6 +205,73 @@ export default function AuditLog() {
     };
   }, [filteredLogs]);
 
+  const memberTimeline = useMemo((): TimelineEntry[] => {
+    if (!selectedMemberName) return [];
+    const member = members.find((m) => m.name === selectedMemberName);
+    if (!member) return [];
+
+    const memberLogs = allLogs
+      .filter((l) => l.targetName === selectedMemberName)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    let curPrincipal = member.principalBalance;
+    let curGift = member.giftBalance;
+
+    return memberLogs.map((log) => {
+      const afterPrincipal = curPrincipal;
+      const afterGift = curGift;
+
+      let beforePrincipal = afterPrincipal;
+      let beforeGift = afterGift;
+
+      switch (log.type) {
+        case 'recharge': {
+          const giftAmt = parseGiftAmount(log.detail);
+          beforePrincipal = afterPrincipal - (log.amount ?? 0);
+          beforeGift = afterGift - giftAmt;
+          break;
+        }
+        case 'consume': {
+          const cr = consumeRecords.find((r) => r.id === log.targetId);
+          if (cr) {
+            beforePrincipal = afterPrincipal + cr.principalDeduction;
+            beforeGift = afterGift + cr.giftDeduction;
+          } else {
+            beforePrincipal = afterPrincipal + (log.amount ?? 0);
+            beforeGift = afterGift;
+          }
+          break;
+        }
+        case 'refund': {
+          beforePrincipal = afterPrincipal + (log.amount ?? 0);
+          beforeGift = afterGift;
+          break;
+        }
+        default:
+          break;
+      }
+
+      curPrincipal = beforePrincipal;
+      curGift = beforeGift;
+
+      return {
+        ...log,
+        beforePrincipal,
+        beforeGift,
+        afterPrincipal,
+        afterGift,
+      };
+    });
+  }, [selectedMemberName, members, allLogs, consumeRecords]);
+
+  const handleMemberClick = useCallback((name: string) => {
+    setSelectedMemberName(name);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setSelectedMemberName(null);
+  }, []);
+
   const handleExport = () => {
     const headers = ['时间', '动作类型', '阶段', '对象', '门店', '金额(元)', '详情', '操作人'];
     const getStage = (t: string): string => {
@@ -286,7 +374,16 @@ export default function AuditLog() {
       render: (record: OperationLog) => (
         <div className="flex items-center gap-1.5">
           <User className="w-3.5 h-3.5 text-slate-400" />
-          <span className="text-sm font-medium text-slate-800">{record.targetName}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleMemberClick(record.targetName);
+            }}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+          >
+            {record.targetName}
+          </button>
         </div>
       ),
     },
@@ -558,6 +655,135 @@ export default function AuditLog() {
           }}
         />
       </Card>
+
+      {selectedMemberName && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40 transition-opacity"
+            onClick={handleCloseDrawer}
+          />
+          <div className="fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl z-50 flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-800">{selectedMemberName}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  操作记录追溯 · {memberTimeline.length} 条记录
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseDrawer}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {memberTimeline.length === 0 ? (
+                <div className="text-center text-slate-400 py-12">暂无操作记录</div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-slate-200" />
+                  <div className="space-y-5">
+                    {memberTimeline.map((entry) => {
+                      const config = typeConfig[entry.type];
+                      const Icon = config?.icon;
+                      const hasBalanceChange =
+                        entry.beforePrincipal !== entry.afterPrincipal ||
+                        entry.beforeGift !== entry.afterGift;
+
+                      return (
+                        <div key={entry.id} className="relative flex gap-3">
+                          <div
+                            className={clsx(
+                              'relative z-10 w-[15px] h-[15px] rounded-full border-2 border-white mt-1.5 flex-shrink-0',
+                              config?.bgColor ?? 'bg-slate-200'
+                            )}
+                            style={{
+                              boxShadow: `0 0 0 2px ${entry.type === 'recharge' ? '#bbf7d0' : entry.type === 'consume' ? '#e9d5ff' : entry.type === 'refund' ? '#fed7aa' : entry.type === 'freeze' ? '#fecaca' : entry.type === 'unfreeze' ? '#bbf7d0' : '#e2e8f0'}`,
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                {config && Icon && (
+                                  <span
+                                    className={clsx(
+                                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
+                                      config.bgColor,
+                                      config.color
+                                    )}
+                                  >
+                                    <Icon className="w-3 h-3" />
+                                    {config.label}
+                                  </span>
+                                )}
+                                <span className="text-xs text-slate-400">
+                                  {formatDateTime(entry.createdAt)}
+                                </span>
+                              </div>
+                              <p className="text-sm text-slate-700 mb-1.5">{entry.detail}</p>
+                              <div className="flex items-center gap-2 text-xs text-slate-400">
+                                <User className="w-3 h-3" />
+                                <span>{entry.operator}</span>
+                                {entry.storeName && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{entry.storeName}</span>
+                                  </>
+                                )}
+                              </div>
+                              {hasBalanceChange && (
+                                <div className="mt-2 pt-2 border-t border-slate-200 space-y-1 text-xs">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-slate-400">本金</span>
+                                    <span className="text-slate-600 font-medium">
+                                      ¥{entry.beforePrincipal.toLocaleString()}
+                                    </span>
+                                    <span className="text-slate-300">→</span>
+                                    <span
+                                      className={clsx(
+                                        'font-semibold',
+                                        entry.afterPrincipal > entry.beforePrincipal
+                                          ? 'text-green-600'
+                                          : 'text-red-600'
+                                      )}
+                                    >
+                                      ¥{entry.afterPrincipal.toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-slate-400">赠金</span>
+                                    <span className="text-slate-600 font-medium">
+                                      ¥{entry.beforeGift.toLocaleString()}
+                                    </span>
+                                    <span className="text-slate-300">→</span>
+                                    <span
+                                      className={clsx(
+                                        'font-semibold',
+                                        entry.afterGift > entry.beforeGift
+                                          ? 'text-green-600'
+                                          : 'text-red-600'
+                                      )}
+                                    >
+                                      ¥{entry.afterGift.toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

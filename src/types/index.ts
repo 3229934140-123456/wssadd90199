@@ -57,7 +57,7 @@ export interface ConsumeRecord {
   isCrossStore: boolean;
   createdAt: string;
   operator: string;
-  projectItems: { name: string; price: number; principal: number; gift: number; canUseGift: boolean }[];
+  projectItems: { name: string; price: number; principal: number; gift: number; canUseGift: boolean; storeShare?: number; originalShare?: number }[];
 }
 
 export interface RefundRecord {
@@ -154,4 +154,33 @@ export interface OperationLog {
   storeName: string;
   createdAt: string;
   amount?: number;
+}
+
+export interface SettlementItem {
+  storeId: string;
+  storeName: string;
+  rechargeTotal: number;
+  rechargeCount: number;
+  consumeLocalTotal: number;
+  consumeLocalCount: number;
+  consumeCrossInTotal: number;
+  consumeCrossInCount: number;
+  consumeCrossOutTotal: number;
+  consumeCrossOutCount: number;
+  crossInShare: number;
+  crossOutShare: number;
+  netSettlement: number;
+}
+
+export interface SettlementRecord {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  status: 'pending' | 'confirmed' | 'disputed';
+  items: SettlementItem[];
+  totalNetSettlement: number;
+  createdAt: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  disputeReason?: string;
 }

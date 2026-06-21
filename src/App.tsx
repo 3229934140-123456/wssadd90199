@@ -6,6 +6,7 @@ import Recharge from "@/pages/Recharge";
 import Consume from "@/pages/Consume";
 import Refund from "@/pages/Refund";
 import Settings from "@/pages/Settings";
+import AuditLog from "@/pages/AuditLog";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/recharge" element={<Recharge />} />
           <Route path="/consume" element={<Consume />} />
           <Route path="/refund" element={<Refund />} />
+          <Route path="/audit-log" element={<AuditLog />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

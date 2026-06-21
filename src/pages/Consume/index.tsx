@@ -21,7 +21,8 @@ import StatusBadge from '@/components/StatusBadge';
 import { useConsumeStore } from '@/store/useConsumeStore';
 import { useMemberStore } from '@/store/useMemberStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { calculateDeduction } from '@/utils/calculator';
+import { useOperationLogStore } from '@/store/useOperationLogStore';
+import { calculateMixedDeduction } from '@/utils/calculator';
 import { formatDateTime, formatPhone } from '@/utils/format';
 import { clsx } from 'clsx';
 import type { ConsumeRecord, Member, Project } from '@/types';
@@ -30,6 +31,7 @@ export default function Consume() {
   const { records, projects, searchKeyword, filterStore, currentPage, pageSize, setSearchKeyword, setFilterStore, setCurrentPage, addRecord, getFilteredRecords } = useConsumeStore();
   const { members, updateMemberBalance } = useMemberStore();
   const { stores } = useSettingsStore();
+  const { addLog } = useOperationLogStore();
 
   const [activeTab, setActiveTab] = useState<'consume' | 'history'>('consume');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -44,12 +46,16 @@ export default function Consume() {
   const totalAmount = selectedProjects.reduce((sum, p) => sum + p.price, 0);
 
   const deduction = selectedMember
-    ? calculateDeduction(totalAmount, selectedMember, selectedProjects.every((p) => p.canUseGift))
-    : { principal: 0, gift: 0 };
+    ? calculateMixedDeduction(
+        selectedProjects.map((p) => ({ name: p.name, price: p.price, canUseGift: p.canUseGift })),
+        selectedMember
+      )
+    : { principal: 0, gift: 0, items: [] as { name: string; price: number; principal: number; gift: number; canUseGift: boolean }[] };
 
   const isCrossStore = selectedMember && selectedStore && selectedMember.storeId !== selectedStore;
 
   const handleSelectMember = (member: Member) => {
+    if (member.status === 'frozen') return;
     setSelectedMember(member);
     setShowMemberSelect(false);
     setMemberSearch('');
@@ -66,6 +72,11 @@ export default function Consume() {
 
   const handleConsume = () => {
     if (!selectedMember || selectedProjects.length === 0) return;
+
+    if (selectedMember.status === 'frozen') {
+      alert('该会员已冻结，无法进行核销');
+      return;
+    }
 
     const store = stores.find((s) => s.id === (selectedStore || selectedMember.storeId));
     const originalStore = stores.find((s) => s.id === selectedMember.storeId);
@@ -87,6 +98,15 @@ export default function Consume() {
     });
 
     updateMemberBalance(selectedMember.id, -deduction.principal, -deduction.gift);
+
+    addLog({
+      type: 'consume',
+      targetId: selectedMember.id,
+      targetName: selectedMember.name,
+      detail: `消费项目：${selectedProjects.map((p) => p.name).join('、')}，金额 ¥${totalAmount.toLocaleString()}`,
+      operator: '前台操作员',
+      storeName: store?.name || selectedMember.storeName,
+    });
 
     setShowSuccess(true);
     setTimeout(() => {
@@ -229,6 +249,11 @@ export default function Consume() {
                           {selectedMember.name}
                         </h4>
                         <StatusBadge status={selectedMember.status} type="member" />
+                        {selectedMember.status === 'frozen' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+                            已冻结
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-slate-500">
                         {formatPhone(selectedMember.phone)}
@@ -236,6 +261,11 @@ export default function Consume() {
                       <p className="text-xs text-slate-400 mt-0.5">
                         {selectedMember.storeName}
                       </p>
+                      {selectedMember.status === 'frozen' && (
+                        <p className="text-xs text-red-500 mt-1">
+                          该会员已冻结，无法进行核销
+                        </p>
+                      )}
                     </div>
                   </div>
                   <button
@@ -424,6 +454,31 @@ export default function Consume() {
                       </div>
                     </div>
 
+                    {deduction.items.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-sm font-medium text-slate-700 mb-2">项目抵扣明细</p>
+                        <div className="space-y-1.5">
+                          {deduction.items.map((item, index) => (
+                            <div key={index} className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded">
+                              <div className="flex-1 min-w-0">
+                                <span className="text-slate-700 font-medium">{item.name}</span>
+                                <span className="text-slate-400 ml-1">¥{item.price.toLocaleString()}</span>
+                              </div>
+                              {item.canUseGift ? (
+                                <span className="text-slate-600 shrink-0">
+                                  本金 ¥{item.principal.toLocaleString()} / 赠金 ¥{item.gift.toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="text-slate-600 shrink-0">
+                                  仅本金 ¥{item.principal.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {isCrossStore && (
                       <div className="p-3 bg-blue-50 rounded-lg">
                         <div className="flex items-center justify-between text-sm">
@@ -445,6 +500,15 @@ export default function Consume() {
                           </span>
                         </div>
                       )}
+
+                    {selectedMember && selectedMember.status === 'frozen' && (
+                      <div className="p-3 bg-red-50 rounded-lg flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                        <span className="text-xs text-red-600">
+                          该会员已冻结，无法核销
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -452,7 +516,8 @@ export default function Consume() {
                     disabled={
                       !selectedMember ||
                       selectedProjects.length === 0 ||
-                      (selectedMember && deduction.principal > selectedMember.principalBalance)
+                      (selectedMember && deduction.principal > selectedMember.principalBalance) ||
+                      (selectedMember && selectedMember.status === 'frozen')
                     }
                     className="w-full mt-4 py-3 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
@@ -549,34 +614,63 @@ export default function Consume() {
                   <p className="text-sm">未找到相关会员</p>
                 </div>
               ) : (
-                filteredMembers.map((member) => (
-                  <button
-                    key={member.id}
-                    onClick={() => handleSelectMember(member)}
-                    className="w-full p-3 flex items-center gap-3 rounded-lg hover:bg-slate-50 transition-colors text-left"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-lg">
-                      {member.avatar}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-800 truncate">
-                          {member.name}
-                        </span>
-                        <StatusBadge status={member.status} type="member" />
+                filteredMembers.map((member) => {
+                  const isFrozen = member.status === 'frozen';
+                  return (
+                    <button
+                      key={member.id}
+                      onClick={() => handleSelectMember(member)}
+                      disabled={isFrozen}
+                      title={isFrozen ? '已冻结，不可核销' : undefined}
+                      className={clsx(
+                        'w-full p-3 flex items-center gap-3 rounded-lg transition-colors text-left',
+                        isFrozen
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:bg-slate-50'
+                      )}
+                    >
+                      <div className={clsx(
+                        'w-10 h-10 rounded-full flex items-center justify-center text-white text-lg',
+                        isFrozen
+                          ? 'bg-slate-400'
+                          : 'bg-gradient-to-br from-blue-400 to-indigo-500'
+                      )}>
+                        {member.avatar}
                       </div>
-                      <p className="text-xs text-slate-500">
-                        {formatPhone(member.phone)} · {member.storeName}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <AmountDisplay
-                        amount={member.principalBalance + member.giftBalance}
-                        size="sm"
-                      />
-                    </div>
-                  </button>
-                ))
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={clsx(
+                            'font-medium truncate',
+                            isFrozen ? 'text-slate-400' : 'text-slate-800'
+                          )}>
+                            {member.name}
+                          </span>
+                          {isFrozen ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+                              已冻结
+                            </span>
+                          ) : (
+                            <StatusBadge status={member.status} type="member" />
+                          )}
+                        </div>
+                        <p className={clsx(
+                          'text-xs',
+                          isFrozen ? 'text-slate-400' : 'text-slate-500'
+                        )}>
+                          {formatPhone(member.phone)} · {member.storeName}
+                        </p>
+                      </div>
+                      {!isFrozen && (
+                        <div className="text-right">
+                          <AmountDisplay
+                            amount={member.principalBalance + member.giftBalance}
+                            size="sm"
+                          />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

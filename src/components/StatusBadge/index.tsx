@@ -8,9 +8,10 @@ interface StatusBadgeProps {
 const statusStyles: Record<string, Record<string, string>> = {
   approval: {
     pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    pending_store: 'bg-blue-100 text-blue-700 border-blue-200',
+    pending_finance: 'bg-orange-100 text-orange-700 border-orange-200',
     approved: 'bg-green-100 text-green-700 border-green-200',
     rejected: 'bg-red-100 text-red-700 border-red-200',
-    pending_finance: 'bg-orange-100 text-orange-700 border-orange-200',
   },
   member: {
     normal: 'bg-green-100 text-green-700 border-green-200',
@@ -30,9 +31,10 @@ const statusStyles: Record<string, Record<string, string>> = {
 const statusTextMap: Record<string, Record<string, string>> = {
   approval: {
     pending: '待审批',
+    pending_store: '待店长审批',
+    pending_finance: '待财务终审',
     approved: '已通过',
     rejected: '已驳回',
-    pending_finance: '待财务终审',
   },
   member: {
     normal: '正常',

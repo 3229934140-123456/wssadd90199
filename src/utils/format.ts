@@ -30,9 +30,10 @@ export const formatPhone = (phone: string): string => {
 export const getStatusText = (status: string): string => {
   const map: Record<string, string> = {
     pending: '待审批',
+    pending_store: '待店长审批',
+    pending_finance: '待财务终审',
     approved: '已通过',
     rejected: '已驳回',
-    pending_finance: '待财务终审',
     normal: '正常',
     frozen: '已冻结',
     handled: '已处理',

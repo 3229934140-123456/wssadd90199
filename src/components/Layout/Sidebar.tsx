@@ -5,6 +5,7 @@ import {
   CreditCard,
   Receipt,
   Undo2,
+  FileText,
   Settings,
   ShieldAlert,
   ChevronLeft,
@@ -18,6 +19,7 @@ const menuItems = [
   { path: '/recharge', label: '充值审批', icon: CreditCard },
   { path: '/consume', label: '消费核销', icon: Receipt },
   { path: '/refund', label: '退款退卡', icon: Undo2 },
+  { path: '/audit-log', label: '对账记录', icon: FileText },
   { path: '/settings', label: '规则配置', icon: Settings },
 ];
 

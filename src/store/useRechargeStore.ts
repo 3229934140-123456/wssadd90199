@@ -21,9 +21,9 @@ interface RechargeActions {
   setSelectedRecord: (record: RechargeRecord | null) => void;
   getFilteredRecords: () => RechargeRecord[];
   getPendingCount: () => number;
-  approveRecord: (id: string, approver: string, opinion: string) => void;
+  approveRecord: (id: string, approver: string, opinion: string) => RechargeRecord | null;
   rejectRecord: (id: string, approver: string, opinion: string) => void;
-  addRecord: (record: Omit<RechargeRecord, 'id' | 'createdAt' | 'status'>) => void;
+  addRecord: (record: Omit<RechargeRecord, 'id' | 'createdAt'>) => RechargeRecord;
 }
 
 export const useRechargeStore = create<RechargeState & RechargeActions>((set, get) => ({
@@ -54,23 +54,20 @@ export const useRechargeStore = create<RechargeState & RechargeActions>((set, ge
   },
 
   getPendingCount: () => {
-    return get().records.filter((r) => r.status === 'pending' || r.status === 'pending_finance').length;
+    return get().records.filter((r) => r.status === 'pending' || r.status === 'pending_store' || r.status === 'pending_finance').length;
   },
 
-  approveRecord: (id, approver, opinion) =>
+  approveRecord: (id, approver, opinion) => {
+    let approvedRecord: RechargeRecord | null = null;
     set((state) => ({
-      records: state.records.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status: 'approved',
-              approver,
-              approveOpinion: opinion,
-              approvedAt: new Date().toISOString(),
-            }
-          : r
-      ),
-    })),
+      records: state.records.map((r) => {
+        if (r.id !== id) return r;
+        approvedRecord = { ...r, status: 'approved', approver, approveOpinion: opinion, approvedAt: new Date().toISOString() };
+        return approvedRecord;
+      }),
+    }));
+    return approvedRecord;
+  },
 
   rejectRecord: (id, approver, opinion) =>
     set((state) => ({
@@ -87,16 +84,29 @@ export const useRechargeStore = create<RechargeState & RechargeActions>((set, ge
       ),
     })),
 
-  addRecord: (record) =>
+  addRecord: (record) => {
+    const newRecord: RechargeRecord = {
+      ...record,
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+    };
     set((state) => ({
-      records: [
-        {
-          ...record,
-          id: generateId(),
-          createdAt: new Date().toISOString(),
-          status: 'pending',
-        },
-        ...state.records,
-      ],
-    })),
+      records: [newRecord, ...state.records],
+    }));
+    return newRecord;
+  },
 }));
+
+export function resolveRechargeStatus(
+  amount: number,
+  storeSingleLimit: number,
+  financeLimit: number
+): { status: RechargeRecord['status']; approvalLevel: RechargeRecord['approvalLevel'] } {
+  if (amount > financeLimit) {
+    return { status: 'pending_finance', approvalLevel: 'finance' };
+  }
+  if (amount > storeSingleLimit) {
+    return { status: 'pending_store', approvalLevel: 'store' };
+  }
+  return { status: 'approved', approvalLevel: 'auto' };
+}

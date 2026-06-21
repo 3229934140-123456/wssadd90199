@@ -29,9 +29,12 @@ export interface RechargeRecord {
   giftRatio: number;
   activity: string;
   paymentProof: string;
+  paymentProofType: 'file' | 'text';
+  paymentProofName: string;
   source: string;
   consultant: string;
-  status: 'pending' | 'approved' | 'rejected' | 'pending_finance';
+  status: 'pending' | 'pending_store' | 'pending_finance' | 'approved' | 'rejected';
+  approvalLevel: 'auto' | 'store' | 'finance';
   approver?: string;
   approveOpinion?: string;
   createdAt: string;
@@ -138,4 +141,15 @@ export interface DashboardStats {
   pendingRefundCount: number;
   alertCount: number;
   memberCount: number;
+}
+
+export interface OperationLog {
+  id: string;
+  type: 'recharge' | 'consume' | 'refund' | 'freeze' | 'unfreeze' | 'approve' | 'reject';
+  targetId: string;
+  targetName: string;
+  detail: string;
+  operator: string;
+  storeName: string;
+  createdAt: string;
 }

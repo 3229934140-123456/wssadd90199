@@ -8,6 +8,7 @@ import { useMemberStore } from '@/store/useMemberStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useConsumeStore } from '@/store/useConsumeStore';
 import { useRechargeStore } from '@/store/useRechargeStore';
+import { useOperationLogStore } from '@/store/useOperationLogStore';
 import { formatDate, formatPhone, formatDateTime } from '@/utils/format';
 import { clsx } from 'clsx';
 import type { Member } from '@/types';
@@ -33,11 +34,27 @@ export default function Members() {
   const { stores } = useSettingsStore();
   const { records: rechargeRecords } = useRechargeStore();
   const { records: consumeRecords, getMemberConsumes } = useConsumeStore();
+  const { addLog } = useOperationLogStore();
 
   const [activeTab, setActiveTab] = useState<'recharge' | 'consume' | 'refund'>('recharge');
   const [showDetail, setShowDetail] = useState(false);
 
   const filteredMembers = getFilteredMembers();
+
+  const handleToggleStatus = (memberId: string) => {
+    const member = members.find((m) => m.id === memberId);
+    if (!member) return;
+    const wasFrozen = member.status === 'frozen';
+    toggleMemberStatus(memberId);
+    addLog({
+      type: wasFrozen ? 'unfreeze' : 'freeze',
+      targetId: memberId,
+      targetName: member.name,
+      detail: wasFrozen ? '账户解冻' : '账户冻结',
+      operator: '财务管理员',
+      storeName: member.storeName,
+    });
+  };
 
   const handleViewDetail = (member: Member) => {
     setSelectedMember(member);
@@ -167,7 +184,7 @@ export default function Members() {
             )}
             onClick={(e) => {
               e.stopPropagation();
-              toggleMemberStatus(record.id);
+              handleToggleStatus(record.id);
             }}
           >
             {record.status === 'normal' ? '冻结' : '解冻'}
@@ -476,7 +493,7 @@ export default function Members() {
 
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => toggleMemberStatus(selectedMember.id)}
+                  onClick={() => handleToggleStatus(selectedMember.id)}
                   className={clsx(
                     'flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors',
                     selectedMember.status === 'normal'

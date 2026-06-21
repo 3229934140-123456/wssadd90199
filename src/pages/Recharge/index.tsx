@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   Search,
   Filter,
@@ -15,14 +15,17 @@ import {
   UserCheck,
   Tag,
   AlertTriangle,
+  Upload,
+  Type,
 } from 'lucide-react';
 import Card from '@/components/Card';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import AmountDisplay from '@/components/AmountDisplay';
-import { useRechargeStore } from '@/store/useRechargeStore';
+import { useRechargeStore, resolveRechargeStatus } from '@/store/useRechargeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useMemberStore } from '@/store/useMemberStore';
+import { useOperationLogStore } from '@/store/useOperationLogStore';
 import { formatDateTime, formatPhone } from '@/utils/format';
 import { calculateGiftAmount } from '@/utils/calculator';
 import { clsx } from 'clsx';
@@ -48,7 +51,8 @@ export default function Recharge() {
   } = useRechargeStore();
 
   const { stores, giftRules, approvalFlow } = useSettingsStore();
-  const { members } = useMemberStore();
+  const { members, updateMemberBalance } = useMemberStore();
+  const { addLog } = useOperationLogStore();
 
   const [showDetail, setShowDetail] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -56,11 +60,16 @@ export default function Recharge() {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [approveType, setApproveType] = useState<'approve' | 'reject'>('approve');
 
+  const [proofTab, setProofTab] = useState<'file' | 'text'>('file');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [newRecharge, setNewRecharge] = useState({
     memberId: '',
     amount: 0,
     activity: '',
     paymentProof: '',
+    paymentProofName: '',
+    paymentProofType: 'file' as 'file' | 'text',
     source: '',
     consultant: '',
     storeId: '',
@@ -83,23 +92,68 @@ export default function Recharge() {
   const confirmApprove = () => {
     if (!selectedRecord) return;
     if (approveType === 'approve') {
-      approveRecord(selectedRecord.id, '财务管理员', approveOpinion);
+      const approvedRecord = approveRecord(selectedRecord.id, '财务管理员', approveOpinion);
+      if (approvedRecord) {
+        updateMemberBalance(
+          approvedRecord.memberId,
+          approvedRecord.amount,
+          approvedRecord.giftAmount
+        );
+        addLog({
+          type: 'approve',
+          targetId: approvedRecord.id,
+          targetName: approvedRecord.memberName,
+          detail: `充值审批通过，金额 ¥${approvedRecord.amount.toLocaleString()}，赠送 ¥${approvedRecord.giftAmount.toLocaleString()}`,
+          operator: '财务管理员',
+          storeName: approvedRecord.storeName,
+        });
+      }
     } else {
       rejectRecord(selectedRecord.id, '财务管理员', approveOpinion);
+      addLog({
+        type: 'reject',
+        targetId: selectedRecord.id,
+        targetName: selectedRecord.memberName,
+        detail: `充值审批驳回：${approveOpinion || '无'}`,
+        operator: '财务管理员',
+        storeName: selectedRecord.storeName,
+      });
     }
     setShowApproveModal(false);
     setSelectedRecord(null);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setNewRecharge((prev) => ({
+        ...prev,
+        paymentProof: reader.result as string,
+        paymentProofName: file.name,
+        paymentProofType: 'file',
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleAddRecharge = () => {
     if (!newRecharge.memberId || !newRecharge.amount || !newRecharge.storeId) return;
-    
+
     const member = members.find((m) => m.id === newRecharge.memberId);
     const store = stores.find((s) => s.id === newRecharge.storeId);
     const giftAmount = calculateGiftAmount(newRecharge.amount, giftRules);
     const giftRatio = newRecharge.amount > 0 ? giftAmount / newRecharge.amount : 0;
 
-    addRecord({
+    const storeSingleLimit = store?.singleLimit ?? approvalFlow.storeLimit;
+    const { status, approvalLevel } = resolveRechargeStatus(
+      newRecharge.amount,
+      storeSingleLimit,
+      approvalFlow.financeLimit
+    );
+
+    const newRecord = addRecord({
       memberId: newRecharge.memberId,
       memberName: member?.name || '',
       memberPhone: member?.phone || '',
@@ -109,9 +163,30 @@ export default function Recharge() {
       giftAmount,
       giftRatio,
       activity: newRecharge.activity || '常规充值',
-      paymentProof: newRecharge.paymentProof || 'https://example.com/payment.jpg',
+      paymentProof: newRecharge.paymentProof || '',
+      paymentProofType: newRecharge.paymentProofType,
+      paymentProofName: newRecharge.paymentProofName || '',
       source: newRecharge.source || '到店咨询',
       consultant: newRecharge.consultant || '',
+      status,
+      approvalLevel,
+    });
+
+    if (status === 'approved') {
+      updateMemberBalance(newRecharge.memberId, newRecharge.amount, giftAmount);
+    }
+
+    addLog({
+      type: 'recharge',
+      targetId: newRecord.id,
+      targetName: member?.name || '',
+      detail: status === 'approved'
+        ? `充值 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，自动通过`
+        : status === 'pending_store'
+        ? `充值 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，待店长审批`
+        : `充值 ¥${newRecharge.amount.toLocaleString()}，赠送 ¥${giftAmount.toLocaleString()}，待财务终审`,
+      operator: status === 'approved' ? '系统自动' : '前台操作员',
+      storeName: store?.name || '',
     });
 
     setShowAddModal(false);
@@ -120,10 +195,19 @@ export default function Recharge() {
       amount: 0,
       activity: '',
       paymentProof: '',
+      paymentProofName: '',
+      paymentProofType: 'file',
       source: '',
       consultant: '',
       storeId: '',
     });
+    setProofTab('file');
+  };
+
+  const approvalLevelLabels: Record<string, string> = {
+    auto: '自动审批',
+    store: '店长审批中',
+    finance: '财务终审中',
   };
 
   const columns = [
@@ -188,7 +272,19 @@ export default function Recharge() {
       key: 'status',
       title: '审批状态',
       render: (record: RechargeRecord) => (
-        <StatusBadge status={record.status} type="approval" />
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={record.status} type="approval" />
+          {record.approvalLevel && record.approvalLevel !== 'auto' && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+              {approvalLevelLabels[record.approvalLevel] || record.approvalLevel}
+            </span>
+          )}
+          {record.approvalLevel === 'auto' && record.status === 'approved' && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600 border border-green-100">
+              自动审批
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -217,7 +313,7 @@ export default function Recharge() {
           >
             <Eye className="w-4 h-4" />
           </button>
-          {(record.status === 'pending' || record.status === 'pending_finance') && (
+          {(record.status === 'pending' || record.status === 'pending_store' || record.status === 'pending_finance') && (
             <>
               <button
                 className="text-green-600 hover:text-green-700 p-1.5 rounded hover:bg-green-50 transition-colors"
@@ -249,6 +345,7 @@ export default function Recharge() {
   const statusTabs = [
     { key: 'all', label: '全部' },
     { key: 'pending', label: '待审批' },
+    { key: 'pending_store', label: '待店长审批' },
     { key: 'pending_finance', label: '待财务终审' },
     { key: 'approved', label: '已通过' },
     { key: 'rejected', label: '已驳回' },
@@ -365,7 +462,19 @@ export default function Recharge() {
                   <p className="text-sm text-slate-500 mb-1">充值金额</p>
                   <AmountDisplay amount={selectedRecord.amount} size="xl" />
                 </div>
-                <StatusBadge status={selectedRecord.status} type="approval" />
+                <div className="flex items-center gap-1.5">
+                  <StatusBadge status={selectedRecord.status} type="approval" />
+                  {selectedRecord.approvalLevel && selectedRecord.approvalLevel !== 'auto' && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                      {approvalLevelLabels[selectedRecord.approvalLevel]}
+                    </span>
+                  )}
+                  {selectedRecord.approvalLevel === 'auto' && selectedRecord.status === 'approved' && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600 border border-green-100">
+                      自动审批
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -461,12 +570,25 @@ export default function Recharge() {
 
               <div>
                 <p className="text-sm text-slate-500 mb-2">付款凭证</p>
-                <div className="w-full h-32 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
-                  <div className="text-center">
-                    <FileText className="w-8 h-8 mx-auto mb-1 opacity-50" />
-                    <p className="text-xs">点击查看付款凭证</p>
+                {selectedRecord.paymentProofType === 'file' ? (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-700 truncate">
+                        {selectedRecord.paymentProofName || '附件文件'}
+                      </p>
+                      <p className="text-xs text-slate-400">文件凭证</p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                      {selectedRecord.paymentProof || '无凭证内容'}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {selectedRecord.approver && (
@@ -486,7 +608,7 @@ export default function Recharge() {
                 </div>
               )}
 
-              {(selectedRecord.status === 'pending' || selectedRecord.status === 'pending_finance') && (
+              {(selectedRecord.status === 'pending' || selectedRecord.status === 'pending_store' || selectedRecord.status === 'pending_finance') && (
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => {
@@ -664,13 +786,92 @@ export default function Recharge() {
               </div>
 
               <div>
-                <label className="block text-sm text-slate-600 mb-1.5">付款凭证</label>
-                <div className="w-full h-24 border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-colors cursor-pointer">
-                  <div className="text-center">
-                    <FileText className="w-8 h-8 mx-auto mb-1" />
-                    <p className="text-xs">点击上传付款凭证</p>
-                  </div>
+                <label className="block text-sm text-slate-600 mb-2">付款凭证</label>
+                <div className="flex gap-1 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setProofTab('file')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      proofTab === 'file'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    )}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    文件上传
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProofTab('text')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      proofTab === 'text'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    )}
+                  >
+                    <Type className="w-3.5 h-3.5" />
+                    凭证录入
+                  </button>
                 </div>
+
+                {proofTab === 'file' ? (
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                    <div
+                      className="w-full h-24 border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {newRecharge.paymentProofName ? (
+                        <div className="text-center">
+                          <FileText className="w-8 h-8 mx-auto mb-1 text-blue-500" />
+                          <p className="text-xs text-slate-600 truncate max-w-[200px]">
+                            {newRecharge.paymentProofName}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="text-center">
+                          <Upload className="w-8 h-8 mx-auto mb-1 opacity-50" />
+                          <p className="text-xs">点击上传付款凭证</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={newRecharge.paymentProofName}
+                      onChange={(e) =>
+                        setNewRecharge({
+                          ...newRecharge,
+                          paymentProofName: e.target.value,
+                          paymentProofType: 'text',
+                        })
+                      }
+                      placeholder="凭证标题/名称"
+                      className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <textarea
+                      value={newRecharge.paymentProof}
+                      onChange={(e) =>
+                        setNewRecharge({
+                          ...newRecharge,
+                          paymentProof: e.target.value,
+                          paymentProofType: 'text',
+                        })
+                      }
+                      placeholder="请输入凭证信息..."
+                      className="w-full h-20 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    />
+                  </div>
+                )}
               </div>
 
               {newRecharge.amount > approvalFlow.storeLimit && (

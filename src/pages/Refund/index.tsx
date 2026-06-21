@@ -25,6 +25,7 @@ import { useRefundStore } from '@/store/useRefundStore';
 import { useMemberStore } from '@/store/useMemberStore';
 import { useConsumeStore } from '@/store/useConsumeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useOperationLogStore } from '@/store/useOperationLogStore';
 import { calculateRefund } from '@/utils/calculator';
 import { formatDateTime, formatPhone } from '@/utils/format';
 import { clsx } from 'clsx';
@@ -51,6 +52,7 @@ export default function Refund() {
   const { members, updateMemberBalance } = useMemberStore();
   const { getMemberConsumes } = useConsumeStore();
   const { stores, approvalFlow } = useSettingsStore();
+  const { addLog } = useOperationLogStore();
 
   const [activeTab, setActiveTab] = useState<'apply' | 'history'>('apply');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -129,9 +131,25 @@ export default function Refund() {
           approvalFlow.refundFeeRate
         );
         updateMemberBalance(member.id, -calc.principalDeduction, -calc.giftDeduction);
+        addLog({
+          type: 'refund',
+          targetId: member.id,
+          targetName: member.name,
+          detail: `退款审批通过，退本金 ¥${calc.principalDeduction.toLocaleString()}，扣赠金 ¥${calc.giftDeduction.toLocaleString()}`,
+          operator: '财务管理员',
+          storeName: member.storeName,
+        });
       }
     } else {
       rejectRefund(selectedRecord.id, '财务管理员');
+      addLog({
+        type: 'reject',
+        targetId: selectedRecord.id,
+        targetName: selectedRecord.memberName,
+        detail: '退款审批驳回',
+        operator: '财务管理员',
+        storeName: selectedRecord.storeName,
+      });
     }
     setShowApproveModal(false);
     setSelectedRecord(null);

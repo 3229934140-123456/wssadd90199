@@ -51,7 +51,16 @@ export const useOperationLogStore = create<OperationLogState & OperationLogActio
   getFilteredLogs: () => {
     const { logs, filterType, searchKeyword } = get();
     return logs.filter((l) => {
-      const matchType = filterType === 'all' || l.type === filterType;
+      let matchType = true;
+      if (filterType !== 'all') {
+        if (filterType === 'refund') {
+          matchType = l.type === 'refund' || l.type === 'refund_apply';
+        } else if (filterType === 'freeze') {
+          matchType = l.type === 'freeze' || l.type === 'unfreeze';
+        } else {
+          matchType = l.type === filterType;
+        }
+      }
       const matchKeyword =
         l.targetName.includes(searchKeyword) ||
         l.detail.includes(searchKeyword) ||

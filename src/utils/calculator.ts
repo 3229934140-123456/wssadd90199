@@ -34,26 +34,28 @@ export const calculateMixedDeduction = (
   projects: { name?: string; price: number; canUseGift: boolean }[],
   member: Member
 ): { principal: number; gift: number; items: { name: string; price: number; principal: number; gift: number; canUseGift: boolean }[] } => {
-  const giftOnlyTotal = projects.filter(p => p.canUseGift).reduce((s, p) => s + p.price, 0);
-  const principalOnlyTotal = projects.filter(p => !p.canUseGift).reduce((s, p) => s + p.price, 0);
+  const giftOnlyProjects = projects.filter(p => p.canUseGift);
+  const principalOnlyProjects = projects.filter(p => !p.canUseGift);
+  const giftOnlyTotal = giftOnlyProjects.reduce((s, p) => s + p.price, 0);
+  const principalOnlyTotal = principalOnlyProjects.reduce((s, p) => s + p.price, 0);
 
-  const giftAvailable = member.giftBalance;
-  const giftForGiftItems = Math.min(giftAvailable, giftOnlyTotal);
-  const giftRemaining = giftAvailable - giftForGiftItems;
-  const principalForGiftItems = giftOnlyTotal - giftForGiftItems;
+  const totalGift = Math.min(member.giftBalance, giftOnlyTotal);
+  const totalPrincipal = giftOnlyTotal + principalOnlyTotal - totalGift;
 
-  const totalPrincipal = principalForGiftItems + principalOnlyTotal;
+  let remainingGift = totalGift;
+  const items = projects.map(p => {
+    if (!p.canUseGift) {
+      return { name: p.name || '', price: p.price, principal: p.price, gift: 0, canUseGift: false };
+    }
+    const itemGift = Math.min(remainingGift, p.price);
+    remainingGift -= itemGift;
+    return { name: p.name || '', price: p.price, principal: p.price - itemGift, gift: itemGift, canUseGift: true };
+  });
 
   return {
     principal: totalPrincipal,
-    gift: giftForGiftItems,
-    items: projects.map(p => {
-      if (p.canUseGift) {
-        const itemGift = Math.min(giftAvailable, p.price);
-        return { name: p.name || '', price: p.price, principal: p.price - itemGift, gift: itemGift, canUseGift: true };
-      }
-      return { name: p.name || '', price: p.price, principal: p.price, gift: 0, canUseGift: false };
-    }),
+    gift: totalGift,
+    items,
   };
 };
 

@@ -57,6 +57,7 @@ export interface ConsumeRecord {
   isCrossStore: boolean;
   createdAt: string;
   operator: string;
+  projectItems: { name: string; price: number; principal: number; gift: number; canUseGift: boolean }[];
 }
 
 export interface RefundRecord {
@@ -145,11 +146,12 @@ export interface DashboardStats {
 
 export interface OperationLog {
   id: string;
-  type: 'recharge' | 'consume' | 'refund' | 'freeze' | 'unfreeze' | 'approve' | 'reject';
+  type: 'recharge' | 'consume' | 'refund' | 'refund_apply' | 'freeze' | 'unfreeze' | 'approve' | 'reject';
   targetId: string;
   targetName: string;
   detail: string;
   operator: string;
   storeName: string;
   createdAt: string;
+  amount?: number;
 }

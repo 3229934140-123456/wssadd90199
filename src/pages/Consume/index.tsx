@@ -95,6 +95,7 @@ export default function Consume() {
       performanceRatio: isCrossStore ? 0.7 : 1,
       isCrossStore: !!isCrossStore,
       operator: '前台操作员',
+      projectItems: deduction.items,
     });
 
     updateMemberBalance(selectedMember.id, -deduction.principal, -deduction.gift);

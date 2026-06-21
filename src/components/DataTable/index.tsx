@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 interface DataTableProps<T> {
   columns: {
     key: string;
-    title: string;
+    title: React.ReactNode;
     width?: string;
     align?: 'left' | 'center' | 'right';
     render?: (record: T, index: number) => React.ReactNode;

@@ -17,6 +17,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: false,
     createdAt: '2025-06-22T14:30:00',
     operator: '前台小李',
+    projectItems: [{ name: '光子嫩肤', price: 3800, principal: 0, gift: 3800, canUseGift: true }],
   },
   {
     id: 'c2',
@@ -34,6 +35,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: false,
     createdAt: '2025-06-21T10:00:00',
     operator: '前台小张',
+    projectItems: [{ name: '热玛吉全脸', price: 28000, principal: 8000, gift: 20000, canUseGift: true }],
   },
   {
     id: 'c3',
@@ -51,6 +53,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: true,
     createdAt: '2025-06-20T15:45:00',
     operator: '前台小王',
+    projectItems: [{ name: '水光针', price: 2500, principal: 2500, gift: 0, canUseGift: false }],
   },
   {
     id: 'c4',
@@ -68,6 +71,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: false,
     createdAt: '2025-06-19T11:20:00',
     operator: '前台小陈',
+    projectItems: [{ name: '超声炮', price: 15000, principal: 5000, gift: 10000, canUseGift: true }],
   },
   {
     id: 'c5',
@@ -85,6 +89,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: false,
     createdAt: '2025-06-18T09:30:00',
     operator: '前台小刘',
+    projectItems: [{ name: '线雕提升', price: 45000, principal: 15000, gift: 30000, canUseGift: true }],
   },
   {
     id: 'c6',
@@ -102,6 +107,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: false,
     createdAt: '2025-06-17T16:00:00',
     operator: '前台小赵',
+    projectItems: [{ name: '果酸换肤', price: 1200, principal: 0, gift: 1200, canUseGift: true }],
   },
   {
     id: 'c7',
@@ -119,6 +125,7 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: false,
     createdAt: '2025-06-16T13:15:00',
     operator: '前台小孙',
+    projectItems: [{ name: '玻尿酸填充', price: 6800, principal: 3800, gift: 3000, canUseGift: true }],
   },
   {
     id: 'c8',
@@ -136,5 +143,6 @@ export const mockConsumes: ConsumeRecord[] = [
     isCrossStore: true,
     createdAt: '2025-06-15T14:45:00',
     operator: '前台小陈',
+    projectItems: [{ name: '热拉提', price: 12000, principal: 2000, gift: 10000, canUseGift: true }],
   },
 ];

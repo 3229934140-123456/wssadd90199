@@ -23,6 +23,8 @@ interface RechargeActions {
   getPendingCount: () => number;
   approveRecord: (id: string, approver: string, opinion: string) => RechargeRecord | null;
   rejectRecord: (id: string, approver: string, opinion: string) => void;
+  approveRecords: (ids: string[], approver: string, opinion: string) => RechargeRecord[];
+  rejectRecords: (ids: string[], approver: string, opinion: string) => void;
   addRecord: (record: Omit<RechargeRecord, 'id' | 'createdAt'>) => RechargeRecord;
 }
 
@@ -62,6 +64,7 @@ export const useRechargeStore = create<RechargeState & RechargeActions>((set, ge
     set((state) => ({
       records: state.records.map((r) => {
         if (r.id !== id) return r;
+        if (r.status !== 'pending' && r.status !== 'pending_store' && r.status !== 'pending_finance') return r;
         approvedRecord = { ...r, status: 'approved', approver, approveOpinion: opinion, approvedAt: new Date().toISOString() };
         return approvedRecord;
       }),
@@ -69,19 +72,48 @@ export const useRechargeStore = create<RechargeState & RechargeActions>((set, ge
     return approvedRecord;
   },
 
+  approveRecords: (ids, approver, opinion) => {
+    const approvedRecords: RechargeRecord[] = [];
+    set((state) => ({
+      records: state.records.map((r) => {
+        if (!ids.includes(r.id)) return r;
+        if (r.status !== 'pending' && r.status !== 'pending_store' && r.status !== 'pending_finance') return r;
+        const updated: RechargeRecord = { ...r, status: 'approved', approver, approveOpinion: opinion, approvedAt: new Date().toISOString() };
+        approvedRecords.push(updated);
+        return updated;
+      }),
+    }));
+    return approvedRecords;
+  },
+
   rejectRecord: (id, approver, opinion) =>
     set((state) => ({
-      records: state.records.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status: 'rejected',
-              approver,
-              approveOpinion: opinion,
-              approvedAt: new Date().toISOString(),
-            }
-          : r
-      ),
+      records: state.records.map((r) => {
+        if (r.id !== id) return r;
+        if (r.status !== 'pending' && r.status !== 'pending_store' && r.status !== 'pending_finance') return r;
+        return {
+          ...r,
+          status: 'rejected',
+          approver,
+          approveOpinion: opinion,
+          approvedAt: new Date().toISOString(),
+        };
+      }),
+    })),
+
+  rejectRecords: (ids, approver, opinion) =>
+    set((state) => ({
+      records: state.records.map((r) => {
+        if (!ids.includes(r.id)) return r;
+        if (r.status !== 'pending' && r.status !== 'pending_store' && r.status !== 'pending_finance') return r;
+        return {
+          ...r,
+          status: 'rejected',
+          approver,
+          approveOpinion: opinion,
+          approvedAt: new Date().toISOString(),
+        };
+      }),
     })),
 
   addRecord: (record) => {

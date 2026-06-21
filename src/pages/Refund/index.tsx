@@ -102,6 +102,15 @@ export default function Refund() {
       reason: refundReason,
     });
 
+    addLog({
+      type: 'refund_apply',
+      targetId: selectedMember.id,
+      targetName: selectedMember.name,
+      detail: `退款申请：申请金额 ¥${refundAmount.toLocaleString()}，预计可退 ¥${refundCalc.refundableAmount.toLocaleString()}，原因：${refundReason}`,
+      operator: '前台操作员',
+      storeName: selectedMember.storeName,
+    });
+
     setShowSuccess(true);
     setTimeout(() => {
       setShowSuccess(false);

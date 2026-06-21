@@ -47,6 +47,8 @@ export default function Recharge() {
     getFilteredRecords,
     approveRecord,
     rejectRecord,
+    approveRecords,
+    rejectRecords,
     addRecord,
   } = useRechargeStore();
 
@@ -59,6 +61,10 @@ export default function Recharge() {
   const [approveOpinion, setApproveOpinion] = useState('');
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [approveType, setApproveType] = useState<'approve' | 'reject'>('approve');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batchType, setBatchType] = useState<'approve' | 'reject'>('approve');
+  const [batchOpinion, setBatchOpinion] = useState('');
 
   const [proofTab, setProofTab] = useState<'file' | 'text'>('file');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +127,65 @@ export default function Recharge() {
     }
     setShowApproveModal(false);
     setSelectedRecord(null);
+  };
+
+  const handleBatchApprove = (type: 'approve' | 'reject') => {
+    if (selectedIds.length === 0) return;
+    setBatchType(type);
+    setBatchOpinion('');
+    setShowBatchModal(true);
+  };
+
+  const confirmBatchApprove = () => {
+    if (selectedIds.length === 0) return;
+    if (batchType === 'approve') {
+      const approvedRecords = approveRecords(selectedIds, '财务管理员', batchOpinion);
+      approvedRecords.forEach((r) => {
+        updateMemberBalance(r.memberId, r.amount, r.giftAmount);
+        addLog({
+          type: 'approve',
+          targetId: r.id,
+          targetName: r.memberName,
+          detail: `充值批量审批通过，金额 ¥${r.amount.toLocaleString()}，赠送 ¥${r.giftAmount.toLocaleString()}`,
+          operator: '财务管理员',
+          storeName: r.storeName,
+        });
+      });
+    } else {
+      rejectRecords(selectedIds, '财务管理员', batchOpinion);
+      filteredRecords
+        .filter((r) => selectedIds.includes(r.id))
+        .forEach((r) => {
+          if (r.status === 'pending' || r.status === 'pending_store' || r.status === 'pending_finance') {
+            addLog({
+              type: 'reject',
+              targetId: r.id,
+              targetName: r.memberName,
+              detail: `充值批量审批驳回：${batchOpinion || '无'}`,
+              operator: '财务管理员',
+              storeName: r.storeName,
+            });
+          }
+        });
+    }
+    setSelectedIds([]);
+    setShowBatchModal(false);
+  };
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    const pendingRecords = filteredRecords.filter(
+      (r) => r.status === 'pending' || r.status === 'pending_store' || r.status === 'pending_finance'
+    );
+    const pendingIds = pendingRecords.map((r) => r.id);
+    if (selectedIds.length === pendingIds.length && pendingIds.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(pendingIds);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,6 +276,33 @@ export default function Recharge() {
   };
 
   const columns = [
+    {
+      key: 'select',
+      title: (
+        <input
+          type="checkbox"
+          checked={selectedIds.length > 0 && filteredRecords.filter(r => 
+            r.status === 'pending' || r.status === 'pending_store' || r.status === 'pending_finance'
+          ).every(r => selectedIds.includes(r.id))}
+          onChange={toggleSelectAll}
+          className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+        />
+      ),
+      width: '50px',
+      align: 'center' as const,
+      render: (record: RechargeRecord) => {
+        const isPending = record.status === 'pending' || record.status === 'pending_store' || record.status === 'pending_finance';
+        return (
+          <input
+            type="checkbox"
+            checked={selectedIds.includes(record.id)}
+            onChange={() => toggleSelectId(record.id)}
+            disabled={!isPending}
+            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+        );
+      },
+    },
     {
       key: 'member',
       title: '会员信息',
@@ -391,6 +483,26 @@ export default function Recharge() {
                 </button>
               ))}
             </div>
+
+            {selectedIds.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-100">
+                <span className="text-sm text-blue-700 font-medium">
+                  已选 {selectedIds.length} 笔
+                </span>
+                <button
+                  onClick={() => handleBatchApprove('approve')}
+                  className="px-3 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors"
+                >
+                  批量通过
+                </button>
+                <button
+                  onClick={() => handleBatchApprove('reject')}
+                  className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors"
+                >
+                  批量驳回
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -673,6 +785,51 @@ export default function Recharge() {
                 )}
               >
                 确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowBatchModal(false)}
+          ></div>
+          <div className="relative w-[460px] bg-white rounded-2xl shadow-xl p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">
+              {batchType === 'approve' ? '批量通过' : '批量驳回'}
+            </h3>
+            <p className="text-sm text-slate-500 mb-5">
+              共 {selectedIds.length} 笔充值申请，{batchType === 'approve' ? '通过后将自动更新会员余额' : '驳回后将无法恢复'}
+            </p>
+            <div className="mb-5">
+              <label className="block text-sm text-slate-600 mb-2">审批意见</label>
+              <textarea
+                value={batchOpinion}
+                onChange={(e) => setBatchOpinion(e.target.value)}
+                placeholder="请输入审批意见..."
+                className="w-full h-24 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowBatchModal(false)}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmBatchApprove}
+                className={clsx(
+                  'flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  batchType === 'approve'
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-red-600 text-white hover:bg-red-700'
+                )}
+              >
+                确认{batchType === 'approve' ? '通过' : '驳回'}
               </button>
             </div>
           </div>
